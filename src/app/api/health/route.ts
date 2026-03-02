@@ -37,6 +37,12 @@ export async function GET() {
     } catch {
         checks.lastIngestion = 'error';
     }
+    // Check environment variables
+    checks.gemini_key = process.env.GEMINI_API_KEY ? 'present' : 'missing (AI classification will use fallback)';
+    checks.news_api_key = process.env.NEWS_API_KEY ? 'present' : 'missing';
+    checks.gnews_api_key = process.env.GNEWS_API_KEY ? 'present' : 'missing';
+    checks.cron_secret = process.env.CRON_SECRET ? 'present' : 'missing';
+    checks.node_env = process.env.NODE_ENV || 'development';
 
     return NextResponse.json({
         status: healthy ? 'ok' : 'degraded',

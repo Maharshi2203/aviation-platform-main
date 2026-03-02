@@ -58,22 +58,29 @@ This is the easiest way to keep using the current local SQLite setup.
 
 Since the app is now "Deployment Ready", it no longer uses a shaky internal scheduler but relies on external triggers for durability.
 
-1. **Vercel Cron**: If using Vercel, add a `vercel.json`:
-   ```json
-   {
-     "crons": [
-       {
-         "path": "/api/cron?action=run",
-         "schedule": "0 */1 * * *"
-       }
-     ]
-   }
-   ```
-2. **Manual / GitHub Actions**: You can trigger a refresh by sending a POST to:
-   `https://your-app.com/api/cron?action=run`
-   (Requires `Authorization: Bearer <your-CRON_SECRET>` in headers).
+1.  **Manual Start**: After deploying, go to the Dashboard and click **"⚡ Fetch News"**. This will populate your database for the first time.
+2.  **Vercel Cron**: If using Vercel, add a `vercel.json`:
+    ```json
+    {
+      "crons": [
+        {
+          "path": "/api/cron?action=run",
+          "schedule": "0 */1 * * *"
+        }
+      ]
+    }
+    ```
+3.  **Manual / GitHub Actions**: You can trigger a refresh by sending a POST to:
+    `https://your-app.com/api/cron?action=run`
+    (Requires `Authorization: Bearer <your-CRON_SECRET>` in headers).
 
-## 5. Security Checklist
+## 5. Troubleshooting & Health
+
+- **Health Check**: Visit `https://your-app.com/api/health` to see the status of your Database and API Keys.
+- **Empty Dashboard**: If the dashboard is empty, click **"Fetch News"**. If it stays empty, check your API Keys in the Health Check.
+- **Stale Lock**: If the UI says "Pipeline already running" but nothing is happening, click the prompt to **"Clear Lock"** on the Dashboard.
+
+## 6. Security Checklist
 - [ ] Set `NODE_ENV=production`.
 - [ ] Add `CRON_SECRET` to prevent malicious actors from spamming your API.
 - [ ] Use HTTPS (provided automatically by Vercel/Cloudflare).

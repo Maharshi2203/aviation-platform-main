@@ -21,6 +21,7 @@ export default function RootLayout({
           src="https://unpkg.com/@lottiefiles/dotlottie-wc@0.9.3/dist/dotlottie-wc.js"
           type="module"
           strategy="afterInteractive"
+          crossOrigin="anonymous"
         />
         <ThemeProvider>
           <div className="app-layout">

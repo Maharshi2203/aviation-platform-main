@@ -63,20 +63,25 @@ export default function DashboardPage() {
   const [ingesting, setIngesting] = useState(false);
   const [pipelineResult, setPipelineResult] = useState<PipelineResult | null>(null);
   const [scheduler, setScheduler] = useState<SchedulerStatus | null>(null);
+  const [health, setHealth] = useState<any>(null);
 
   const fetchData = useCallback(async () => {
     try {
-      const [statsRes, articlesRes, cronRes] = await Promise.all([
+      const [statsRes, articlesRes, cronRes, healthRes] = await Promise.all([
         fetch('/api/articles/stats'),
         fetch('/api/articles?limit=9'),
         fetch('/api/cron'),
+        fetch('/api/health'),
       ]);
       const statsData = await statsRes.json();
       const articlesData = await articlesRes.json();
       const cronData = await cronRes.json();
+      const healthData = await healthRes.json();
+
       if (statsData.success) setStats(statsData.stats);
       if (articlesData.success) setRecentArticles(articlesData.data);
       if (cronData.success) setScheduler(cronData.scheduler);
+      setHealth(healthData);
     } catch (error) {
       console.error('Failed to fetch dashboard data:', error);
     } finally {
@@ -97,11 +102,28 @@ export default function DashboardPage() {
       if (data.success) {
         setPipelineResult(data.result);
         fetchData(); // Refresh stats
+      } else if (res.status === 409) {
+        if (confirm('A pipeline is already running. If it is stuck, would you like to clear the lock?')) {
+          await clearLock();
+        }
       }
     } catch (error) {
       console.error('Ingestion failed:', error);
     } finally {
       setIngesting(false);
+    }
+  };
+
+  const clearLock = async () => {
+    try {
+      const res = await fetch('/api/ingest/clear-lock', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        alert('Pipeline lock cleared. You can now fetch news.');
+        fetchData();
+      }
+    } catch (error) {
+      console.error('Clear lock failed:', error);
     }
   };
 
@@ -140,12 +162,84 @@ export default function DashboardPage() {
   return (
     <div>
       {/* Page header */}
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
         <div>
           <h1>AviationIQ Dashboard</h1>
           <p>Premium aviation intelligence — news, fleets and risks in one view.</p>
         </div>
+        <div style={{ display: 'flex', gap: '12px' }}>
+          <button
+            onClick={fetchData}
+            className="btn btn-ghost"
+            disabled={loading}
+            title="Refresh board data"
+          >
+            {loading ? '...' : '🔄'}
+          </button>
+          <button
+            onClick={triggerIngestion}
+            className={`btn ${ingesting ? 'btn-loading' : 'btn-primary'}`}
+            disabled={ingesting}
+            style={{ minWidth: '140px' }}
+          >
+            {ingesting ? (
+              '🚀 Ingesting...'
+            ) : (
+              <>
+                <span style={{ marginRight: '8px' }}>⚡</span>
+                Fetch News
+              </>
+            )}
+          </button>
+        </div>
       </div>
+
+      {/* Quick Stats Row */}
+      <div className="stats-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '32px' }}>
+        <div className="stat-card">
+          <div className="stat-label">Total Articles</div>
+          <div className="stat-value">{stats?.total || 0}</div>
+          <div className="stat-trend">Database Status: {stats ? 'Connected' : 'Connecting...'}</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Accidents</div>
+          <div className="stat-value" style={{ color: 'var(--accent-red)' }}>{stats?.accidents || 0}</div>
+          <div className="stat-trend">Last 15 days</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Industry Trades</div>
+          <div className="stat-value" style={{ color: 'var(--accent-orange)' }}>{stats?.trades || 0}</div>
+          <div className="stat-trend">Market Intelligence</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">New in 24h</div>
+          <div className="stat-value" style={{ color: 'var(--accent-green)' }}>{stats?.last24h || 0}</div>
+          <div className="stat-trend">Flash Updates</div>
+        </div>
+      </div>
+
+      {pipelineResult && (
+        <div className="alert alert-success" style={{ marginBottom: '32px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+            <div>
+              <strong>🚀 Pipeline Complete:</strong> Fetched {pipelineResult.fetched} articles,
+              found {pipelineResult.newArticles} new, classified {pipelineResult.classified}.
+            </div>
+            <button className="btn btn-ghost btn-sm" onClick={() => setPipelineResult(null)}>✕</button>
+          </div>
+        </div>
+      )}
+
+      {health?.status === 'degraded' && (
+        <div className="alert alert-warning" style={{ marginBottom: '32px', background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b', borderColor: 'rgba(245, 158, 11, 0.2)' }}>
+          <div>
+            <strong>⚠️ System Degraded:</strong> {health.checks.database === 'disconnected' ? 'Database is not connected.' : 'Some features may be limited.'}
+            {Object.entries(health.checks).filter(([k, v]: any) => v.includes('missing')).map(([k, v]: any) => (
+              <div key={k} style={{ fontSize: '0.8rem', marginTop: '4px' }}>• {k.replace('_', ' ')} is missing.</div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Hero layout: Featured + Trending */}
       {featuredArticle && (
@@ -312,10 +406,17 @@ export default function DashboardPage() {
           ))}
         </div>
       ) : (
-        <div className="empty-state">
+        <div className="empty-state" style={{ background: 'rgba(255,255,255,0.02)', padding: '60px', borderRadius: '24px', border: '1px dashed var(--border-medium)' }}>
           <div className="empty-icon">🛫</div>
           <h3>No additional recent articles</h3>
-          <p>Ingest more news to fill out the grid below the featured and trending stories.</p>
+          <p style={{ marginBottom: '24px' }}>Ingest more news to fill out the grid below the featured and trending stories.</p>
+          <button
+            onClick={triggerIngestion}
+            className={`btn ${ingesting ? 'btn-loading' : 'btn-primary'}`}
+            disabled={ingesting}
+          >
+            {ingesting ? '🚀 Ingesting...' : '⚡ Fetch News Now'}
+          </button>
         </div>
       )}
 
