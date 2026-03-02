@@ -1,0 +1,99 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Article {
+  id            String   @id @default(uuid())
+  title         String
+  content       String?
+  description   String?
+  url           String   @unique
+  urlHash       String   @unique
+  sourceName    String?
+  sourceUrl     String?
+  author        String?
+  imageUrl      String?
+  publishedAt   DateTime?
+  fetchedAt     DateTime @default(now())
+
+  // AI Classification
+  category      String   @default("UNCLASSIFIED")
+  aiSummary     String?
+  aiConfidence  Float?
+  tags          String?  // JSON array stored as string
+  entities      String?  // JSON object stored as string
+  keyInsights   String   @default("[]") // JSON string of bullet points
+  severity      String?  // explicit severity level
+  sentiment     String?  // JSON object stored as string
+
+  // Processing
+  status        String   @default("pending")
+  retryCount    Int      @default(0)
+  errorMessage  String?
+  classifiedAt  DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([category])
+  @@index([status])
+  @@index([publishedAt])
+  @@index([sourceName])
+}
+
+model IngestionLog {
+  id          String   @id @default(uuid())
+  source      String   @default("pipeline")
+  fetched     Int      @default(0)
+  newArticles Int      @default(0)
+  classified  Int      @default(0)
+  failed      Int      @default(0)
+  errors      String?  // JSON array stored as string
+  durationMs  Int      @default(0)
+  triggeredBy String   @default("manual") // "manual" | "cron" | "api"
+  createdAt   DateTime @default(now())
+}
+
+/// Aircraft / fleet data models
+model AircraftType {
+  id       Int     @id @default(autoincrement())
+  name     String
+  iataCode String?
+  icaoCode String?
+
+  fleets AirlineFleet[]
+}
+
+model Airline {
+  id         Int    @id @default(autoincrement())
+  parentName String?
+  name       String
+
+  fleets AirlineFleet[]
+
+  @@unique([name])
+}
+
+model AirlineFleet {
+  id Int @id @default(autoincrement())
+
+  airline   Airline      @relation(fields: [airlineId], references: [id])
+  airlineId Int
+
+  aircraftType   AircraftType? @relation(fields: [aircraftTypeId], references: [id])
+  aircraftTypeId Int?
+
+  aircraftTypeRaw  String
+  current          Int?
+  future           Int?
+  historic         Int?
+  total            Int?
+  orders           Int?
+  unitCost         Float?
+  totalCostCurrent Float?
+  averageAge       Float?
+}
