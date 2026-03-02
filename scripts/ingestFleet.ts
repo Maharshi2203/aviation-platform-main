@@ -35,13 +35,21 @@ async function loadAircraftTypes() {
     aircraftTypes.push({ name, iataCode: iata, icaoCode: icao });
   }
 
-  // Upsert each aircraft type by name
+  // Upsert each aircraft type by name (name is not a unique key in schema)
   for (const t of aircraftTypes) {
-    await prisma.aircraftType.upsert({
+    const existing = await prisma.aircraftType.findFirst({
       where: { name: t.name },
-      update: { iataCode: t.iataCode ?? undefined, icaoCode: t.icaoCode ?? undefined },
-      create: t,
+      select: { id: true },
     });
+
+    if (existing) {
+      await prisma.aircraftType.update({
+        where: { id: existing.id },
+        data: { iataCode: t.iataCode ?? undefined, icaoCode: t.icaoCode ?? undefined },
+      });
+    } else {
+      await prisma.aircraftType.create({ data: t });
+    }
   }
 
   console.log(`Saved ${aircraftTypes.length} aircraft types.`);
@@ -173,4 +181,3 @@ main().catch((err) => {
   console.error(err);
   process.exit(1);
 });
-

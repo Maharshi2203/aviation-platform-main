@@ -38,19 +38,24 @@ export interface SourceConfig {
 export const RSS_SOURCES: SourceConfig[] = [
     // Accidents & Incidents
     {
-        name: 'The Aviation Herald',
-        url: 'https://avherald.com/h?subscribe=rss',
+        name: 'AeroInside',
+        url: 'https://www.aeroinside.com/feed',
         type: 'rss',
     },
     {
-        name: 'NTSB Aviation',
-        url: 'https://www.ntsb.gov/news/press-releases/_layouts/15/inplview.aspx?List=%7B8E7E7973-C295-4F36-B1F5-E2E836E74E58%7D&View=%7BDB0B4E68-812B-4371-A7A0-DE74DB67AB21%7D&ViewCount=2&IsXslView=TRUE&IsCSR=TRUE&GroupString=%3B%23Aviation%3B%23&IsGroupRender=TRUE',
+        name: 'The Aviation Herald',
+        url: 'https://avherald.com/h?subscribe=rss', 
         type: 'rss',
     },
-    // Aviation Trades
+    // Aviation Trades & Industry
     {
         name: 'Simple Flying',
         url: 'https://simpleflying.com/feed/',
+        type: 'rss',
+    },
+    {
+        name: 'AIN Online',
+        url: 'https://www.ainonline.com/rss.xml',
         type: 'rss',
     },
     {
@@ -59,24 +64,19 @@ export const RSS_SOURCES: SourceConfig[] = [
         type: 'rss',
     },
     {
-        name: 'FlightGlobal',
-        url: 'https://www.flightglobal.com/rss',
+        name: 'Airline Reporter',
+        url: 'https://www.airlinereporter.com/feed/',
         type: 'rss',
     },
-    // Regulations
+    // Regulations & Authorities
     {
-        name: 'FAA Regulations',
-        url: 'https://www.faa.gov/about/plans_reports/congress/media/REAUTHORIZATION_UPDATES.rss',
+        name: 'FAA News',
+        url: 'https://www.faa.gov/newsroom/press_releases/rss.xml',
         type: 'rss',
     },
     {
         name: 'EASA News',
-        url: 'https://www.easa.europa.eu/en/newsroom-and-events/rss',
-        type: 'rss',
-    },
-    {
-        name: 'ICAO News',
-        url: 'https://www.icao.int/Newsroom/Pages/rss.aspx',
+        url: 'https://www.easa.europa.eu/en/rss/news.xml', // attempting common pattern
         type: 'rss',
     },
 ];

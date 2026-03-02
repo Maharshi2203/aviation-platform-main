@@ -1,10 +1,9 @@
 import { NextResponse } from 'next/server';
 import { runPipeline } from '@/lib/pipeline';
-
-let isRunning = false;
+import { isIngestionRunning, setIngestionRunning } from '@/lib/state';
 
 export async function POST() {
-    if (isRunning) {
+    if (await isIngestionRunning()) {
         return NextResponse.json(
             { success: false, error: 'Pipeline is already running' },
             { status: 409 }
@@ -12,7 +11,7 @@ export async function POST() {
     }
 
     try {
-        isRunning = true;
+        await setIngestionRunning(true);
         const result = await runPipeline('manual');
         return NextResponse.json({ success: true, result });
     } catch (error) {
@@ -22,11 +21,12 @@ export async function POST() {
             { status: 500 }
         );
     } finally {
-        isRunning = false;
+        await setIngestionRunning(false);
     }
 }
 
 export async function GET() {
+    const isRunning = await isIngestionRunning();
     return NextResponse.json({
         success: true,
         status: isRunning ? 'running' : 'idle',

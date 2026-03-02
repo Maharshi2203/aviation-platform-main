@@ -16,11 +16,27 @@ export async function isDuplicate(url: string): Promise<boolean> {
 }
 
 export async function filterDuplicates(articles: RawArticle[]): Promise<RawArticle[]> {
-    const unique: RawArticle[] = [];
-    for (const article of articles) {
-        if (!(await isDuplicate(article.url))) {
-            unique.push(article);
+    if (articles.length === 0) return [];
+
+    const hashes = articles.map(a => hashUrl(a.url));
+    const existing = await prisma.article.findMany({
+        where: {
+            urlHash: { in: hashes },
+        },
+        select: { urlHash: true },
+    });
+
+    const existingHashes = new Set(existing.map(e => e.urlHash));
+
+    // Also track local duplicates within the current fetch
+    const seenLocal = new Set<string>();
+
+    return articles.filter(article => {
+        const hash = hashUrl(article.url);
+        if (existingHashes.has(hash) || seenLocal.has(hash)) {
+            return false;
         }
-    }
-    return unique;
+        seenLocal.add(hash);
+        return true;
+    });
 }
