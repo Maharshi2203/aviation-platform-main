@@ -7,14 +7,32 @@ export async function GET(request: NextRequest) {
         const page = Math.max(1, parseInt(searchParams.get('page') || '1'));
         const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '20')));
         const search = searchParams.get('search') || '';
-
-        const fifteenDaysAgo = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000);
+        // Default: only show articles from the last 60 days unless caller
+        // explicitly passes a custom from/to range.
+        const correlationWindow = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000); // 60 days
+        const from = searchParams.get('from');
+        const to = searchParams.get('to');
 
         const where: Record<string, unknown> = {
             status: 'classified',
             category: 'ACCIDENT_INCIDENT',
-            publishedAt: { gte: fifteenDaysAgo },
         };
+
+        // Apply default 60-day window only when no explicit date range is provided.
+        if (!from && !to) {
+            where.publishedAt = { gte: correlationWindow };
+        } else {
+            const publishedAtFilter: { gte?: Date; lte?: Date } = {};
+            if (from) {
+                publishedAtFilter.gte = new Date(from);
+            }
+            if (to) {
+                publishedAtFilter.lte = new Date(to);
+            }
+            if (Object.keys(publishedAtFilter).length > 0) {
+                where.publishedAt = publishedAtFilter;
+            }
+        }
 
         if (search) {
             where.OR = [

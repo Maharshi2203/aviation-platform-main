@@ -69,6 +69,11 @@ export async function classifyArticle(
         const result = await model.generateContent(prompt);
         const responseText = result.response.text();
 
+        if (!responseText || responseText.trim().length < 5) {
+            console.warn('[Classifier] Empty response from AI, using fallback');
+            return fallbackClassify(title, content);
+        }
+
         // Extract JSON from response (handle potential markdown wrapping)
         const jsonMatch = responseText.match(/\{[\s\S]*\}/);
         if (!jsonMatch) {

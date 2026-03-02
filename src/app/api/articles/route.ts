@@ -15,9 +15,9 @@ export async function GET(request: NextRequest) {
 
         const sort = searchParams.get('sort') || 'newest';
 
-        // Default: only show articles from the last 15 days unless caller
+        // Default: only show articles from the last 60 days unless caller
         // explicitly passes a custom from/to range.
-        const fifteenDaysAgo = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000);
+        const correlationWindow = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
 
         const where: Record<string, unknown> = {
             status: 'classified',
@@ -49,9 +49,9 @@ export async function GET(request: NextRequest) {
             where.publishedAt = { ...(where.publishedAt as object || {}), lte: new Date(to) };
         }
 
-        // Apply default 15‑day window only when no explicit date range is provided.
+        // Apply default 60‑day window only when no explicit date range is provided.
         if (!from && !to) {
-            where.publishedAt = { ...(where.publishedAt as object || {}), gte: fifteenDaysAgo };
+            where.publishedAt = { ...(where.publishedAt as object || {}), gte: correlationWindow };
         }
 
         if (tagsFilter) {
