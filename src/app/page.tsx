@@ -167,56 +167,8 @@ export default function DashboardPage() {
           <h1>AviationIQ Dashboard</h1>
           <p>Premium aviation intelligence — news, fleets and risks in one view.</p>
         </div>
-        <div style={{ display: 'flex', gap: '12px' }}>
-          <button
-            onClick={fetchData}
-            className="btn btn-ghost"
-            disabled={loading}
-            title="Refresh board data"
-          >
-            {loading ? '...' : '🔄'}
-          </button>
-          <button
-            onClick={triggerIngestion}
-            className={`btn ${ingesting ? 'btn-loading' : 'btn-primary'}`}
-            disabled={ingesting}
-            style={{ minWidth: '140px' }}
-          >
-            {ingesting ? (
-              '🚀 Ingesting...'
-            ) : (
-              <>
-                <span style={{ marginRight: '8px' }}>⚡</span>
-                Fetch News
-              </>
-            )}
-          </button>
-        </div>
       </div>
 
-      {/* Quick Stats Row */}
-      <div className="stats-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '32px' }}>
-        <div className="stat-card">
-          <div className="stat-label">Total Articles</div>
-          <div className="stat-value">{stats?.total || 0}</div>
-          <div className="stat-trend">Database Status: {stats ? 'Connected' : 'Connecting...'}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-label">Accidents</div>
-          <div className="stat-value" style={{ color: 'var(--accent-red)' }}>{stats?.accidents || 0}</div>
-          <div className="stat-trend">Last 15 days</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-label">Industry Trades</div>
-          <div className="stat-value" style={{ color: 'var(--accent-orange)' }}>{stats?.trades || 0}</div>
-          <div className="stat-trend">Market Intelligence</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-label">New in 24h</div>
-          <div className="stat-value" style={{ color: 'var(--accent-green)' }}>{stats?.last24h || 0}</div>
-          <div className="stat-trend">Flash Updates</div>
-        </div>
-      </div>
 
       {pipelineResult && (
         <div className="alert alert-success" style={{ marginBottom: '32px' }}>

@@ -249,30 +249,6 @@ export default function AllArticlesPage() {
                             Search and analyze the complete aviation event database
                         </p>
                     </div>
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                        <button
-                            className={`btn ${autoRefresh ? 'btn-primary' : 'btn-ghost'}`}
-                            onClick={() => setAutoRefresh(!autoRefresh)}
-                            style={{ fontSize: '0.8rem', padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px' }}
-                        >
-                            <span style={{
-                                width: '8px', height: '8px', borderRadius: '50%',
-                                background: autoRefresh ? '#22c55e' : '#6b7280',
-                                display: 'inline-block',
-                                animation: autoRefresh ? 'pulse 2s infinite' : 'none',
-                            }} />
-                            {autoRefresh ? `Live • ${Math.floor(countdown / 60)}:${String(countdown % 60).padStart(2, '0')}` : 'Paused'}
-                        </button>
-
-                        <button
-                            className="btn btn-ghost"
-                            onClick={handleManualRefresh}
-                            disabled={ingesting}
-                            style={{ fontSize: '0.8rem', padding: '6px 12px' }}
-                        >
-                            {ingesting ? '⏳ Fetching...' : '🔄 Refresh Now'}
-                        </button>
-                    </div>
                 </div>
             </div>
 
@@ -290,9 +266,6 @@ export default function AllArticlesPage() {
                 )}
                 {lastRefresh && (
                     <span>🔄 Updated {lastRefresh.toLocaleTimeString()}</span>
-                )}
-                {pipelineStatus && !ingesting && (
-                    <span style={{ color: '#22c55e' }}>{pipelineStatus}</span>
                 )}
             </div>
 

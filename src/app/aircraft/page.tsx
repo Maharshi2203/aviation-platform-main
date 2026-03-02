@@ -100,6 +100,7 @@ interface AircraftData {
         aviationStack: boolean;
         fleetDataCount: number;
     };
+    registrationImage?: string | null;
 }
 
 /* ─── Constants ─────────────────────────────────────────────── */
@@ -175,9 +176,18 @@ export default function AircraftPage() {
     const [individualSearch, setIndividualSearch] = useState('');
     const [individualCategory, setIndividualCategory] = useState<'all' | 'current' | 'historic' | 'special'>('all');
     const [sheetsFleetData, setSheetsFleetData] = useState<FleetCsvRow[] | null>(null);
+    const [heroImage, setHeroImage] = useState<string | null>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
     const airlineSearchName = aircraft ? (aircraft.airlineProfile?.airlineName || aircraft.name || '') : '';
+
+    useEffect(() => {
+        if (aircraft) {
+            setHeroImage(aircraft.registrationImage || aircraft.image || null);
+        } else {
+            setHeroImage(null);
+        }
+    }, [aircraft]);
 
     useEffect(() => {
         if (!aircraft || !airlineSearchName.trim()) {
@@ -196,89 +206,103 @@ export default function AircraftPage() {
         return () => { cancelled = true; };
     }, [aircraft?.name, airlineSearchName]);
 
-    async function search(term: string) {
+    async function search(term: string, isFromRegistrationClick = false) {
         const q = term.trim();
         if (!q) return;
         setLoading(true); setError(''); setAircraft(null); setTab('Overview'); setIndividualPage(1);
 
         const norm = q.toLowerCase().replace(/\s+/g, ' ').trim();
-        const canonical =
-            norm === 'singapore airlines' ? 'singapore' :
+        const canonical = norm === 'singapore airlines' ? 'singapore' :
             norm === 'etihad airways' ? 'etihad' :
-            norm === 'indigo airlines' ? 'indigo' :
-            norm;
+                norm === 'indigo airlines' ? 'indigo' :
+                    norm;
 
-        const looksLikeRegistration = /^[A-Za-z0-9-]{3,10}$/.test(q);
+        // Determine if it looks like a registration pattern
+        const looksLikeRegistration = isFromRegistrationClick || (/^[A-Z0-9]{1,3}-[A-Z0-9]{1,6}$/i.test(q) || /^[A-Z][0-9]{3,5}$/i.test(q));
+        
+        let foundGeneral = false;
 
-        // If the query looks like an aircraft registration (e.g. VT-ALF, TC-FHL),
-        // first resolve it against our Sheets data and then search by the airline,
-        // instead of sending the raw registration to Wikipedia (which can return
-        // unrelated pages like electronics brands).
-        if (looksLikeRegistration) {
+        // 1. Try general search first (unless explicitly clicked as registration)
+        if (!isFromRegistrationClick) {
+            try {
+                const r = await fetch(`/api/aircraft?name=${encodeURIComponent(q)}`);
+                const j = await r.json();
+                if (j.success && j.aircraft) {
+                    // Check if it's a generic "Unknown" stub returned by the API when it fails to find real info
+                    const isStub = j.aircraft.name === 'Unknown' || 
+                                (j.aircraft.airlineProfile?.airlineName === 'Unknown' && j.aircraft.aircraftType?.model === null);
+                    
+                    if (!isStub) {
+                        setAircraft(j.aircraft);
+                        setLoading(false);
+                        foundGeneral = true;
+                        return;
+                    }
+                }
+            } catch (err) {
+                console.error("General search error", err);
+            }
+        }
+
+        // 2. If general search wasn't done, or failed/stubbed, AND it looks like a registration
+        if (!foundGeneral && looksLikeRegistration) {
             try {
                 const rr = await fetch(`/api/aircraft/registration?reg=${encodeURIComponent(q)}`);
                 const rj = await rr.json();
-                if (rj.success && rj.airlineName) {
-                    const airlineName: string = rj.airlineName;
-                    const ar = await fetch(`/api/aircraft?name=${encodeURIComponent(airlineName)}`);
-                    const aj = await ar.json();
-                    if (aj.success) {
-                        setAircraft(aj.aircraft);
-                        setTab('Individual Aircraft');
-                        setIndividualSearch(q.toUpperCase());
+                if (rj.success) {
+                    const airlineName = rj.airlineName;
+                    const regImage = rj.image;
+                    
+                    if (airlineName) {
+                        const ar = await fetch(`/api/aircraft?name=${encodeURIComponent(airlineName)}`);
+                        const aj = await ar.json();
+                        if (aj.success) {
+                            const aircraftData: AircraftData = aj.aircraft;
+                            if (regImage) aircraftData.registrationImage = regImage;
+                            setAircraft(aircraftData);
+                            setTab('Individual Aircraft');
+                            setIndividualSearch(q.toUpperCase());
+                            setLoading(false);
+                            return;
+                        }
+                    } else if (regImage) {
+                        const regData: AircraftData = {
+                            name: q.toUpperCase(),
+                            description: `Individual aircraft search for ${q.toUpperCase()}`,
+                            extract: `No detailed history found, but we retrieved an image of this specific airframe.`,
+                            image: regImage,
+                            thumbnail: rj.thumbnail || null,
+                            registrationImage: regImage,
+                            url: '',
+                            categories: ['Individual Aircraft'],
+                            airlineProfile: {
+                                airlineName: 'Unknown', iataCode: null, icaoCode: null, callsign: null, country: null, headquarters: null, founded: null, website: null, fleetSize: null, destinations: null, hubs: null, airlineType: null, airlineStatus: null, fleetAvgAge: null
+                            },
+                            aircraftType: {
+                                manufacturer: null, model: null, family: null, role: 'Individual Airframe', aircraftCategory: null, lengthM: null, wingspanM: null, heightM: null, mtowKg: null, rangeKm: null, cruiseSpeed: null, maxSpeed: null, typicalCapacity: null, maxCapacity: null, engines: null, firstFlight: null, introduction: null, status: null, numberBuilt: null, unitCost: null, crew: null, ceiling: null, primaryUser: null
+                            },
+                            fleetComposition: { totalInDatabase: 0, sampleSize: 0, byModel: [] },
+                            individualAircraft: [],
+                            dataSources: { wikipedia: false, aviationStack: false, fleetDataCount: 0 }
+                        };
+                        setAircraft(regData);
+                        setTab('Overview');
                         setLoading(false);
                         return;
                     }
                 }
-            } catch {
-                // If registration lookup fails, fall through to the normal flow below.
+            } catch (err) {
+                console.error("Reg search error", err);
             }
         }
 
+        // 3. Fallback for Sheets data if everything else failed
         try {
-            const r = await fetch(`/api/aircraft?name=${encodeURIComponent(q)}`);
-            const j = await r.json();
-            if (j.success) {
-                setAircraft(j.aircraft);
-            } else {
-                // If this looks like a direct aircraft registration, try resolving it
-                // to an airline using Sheets, then re-run the search with that airline.
-                if (looksLikeRegistration) {
-                    try {
-                        const rr = await fetch(`/api/aircraft/registration?reg=${encodeURIComponent(q)}`);
-                        const rj = await rr.json();
-                        if (rj.success && rj.airlineName) {
-                            const airlineName: string = rj.airlineName;
-                            // Run a second search with the resolved airline name.
-                            const ar = await fetch(`/api/aircraft?name=${encodeURIComponent(airlineName)}`);
-                            const aj = await ar.json();
-                            if (aj.success) {
-                                setAircraft(aj.aircraft);
-                                setTab('Individual Aircraft');
-                                setIndividualSearch(q.toUpperCase());
-                                setLoading(false);
-                                return;
-                            }
-                        }
-                    } catch {
-                        // fall through to normal handling
-                    }
-                }
-
-                // For major airlines with dedicated Sheets folders, do not replace Wikipedia/AviationStack
-                // data with a Sheets-only stub – surface the error instead.
-                if (MAJOR_SHEETS_AIRLINES.has(canonical)) {
-                    setError(j.error || 'Not found');
-                    return;
-                }
-
-                // Fallback for local/other airlines: build a basic view from Sheets/Fleet Data.
-                try {
-                    const fr = await fetch(`/api/fleet?airline=${encodeURIComponent(q)}`);
-                    const fj = await fr.json();
-                    if (fj.success && Array.isArray(fj.data) && fj.data.length > 0) {
-                        const rows: FleetCsvRow[] = fj.data;
-                        const hasRegistrations = rows.some(r => r.REG);
+            const fr = await fetch(`/api/fleet?airline=${encodeURIComponent(q)}`);
+            const fj = await fr.json();
+            if (fj.success && Array.isArray(fj.data) && fj.data.length > 0) {
+                const rows: FleetCsvRow[] = fj.data;
+                const hasRegistrations = rows.some(r => r.REG);
 
                         const byModel = new Map<string, { model: string; modelCode: string; total: number; active: number; stored: number; engineType: string }>();
                         for (const row of rows) {
@@ -410,6 +434,17 @@ export default function AircraftPage() {
         (sheetsFleetData?.length ?? 0) > 0
     );
 
+    function resetRegistrationContext() {
+        if (!aircraft) return;
+        const newAircraft = { ...aircraft };
+        delete newAircraft.registrationImage;
+        setAircraft(newAircraft);
+        setIndividualSearch('');
+        if (aircraft.airlineProfile.airlineName) {
+            setQuery(aircraft.airlineProfile.airlineName);
+        }
+    }
+
     // Determine visible tabs based on available data
     const visibleTabs = TABS.filter(t => {
         if (t === 'Fleet') return hasFleet;
@@ -521,9 +556,25 @@ export default function AircraftPage() {
                 </div>
             )}
 
-            {/* Results */}
             {!loading && aircraft && (
                 <div style={{ maxWidth: '960px', margin: '0 auto' }}>
+                    {/* Back to fleet button when viewing specific airframe */}
+                    {aircraft.registrationImage && (
+                        <button
+                            onClick={resetRegistrationContext}
+                            style={{
+                                display: 'flex', alignItems: 'center', gap: '8px',
+                                marginBottom: '12px', padding: '8px 14px', borderRadius: '10px',
+                                background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.2)',
+                                color: '#818cf8', fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer',
+                                transition: 'all 0.2s',
+                            }}
+                            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(99,102,241,0.15)'; e.currentTarget.style.transform = 'translateX(-2px)'; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(99,102,241,0.1)'; e.currentTarget.style.transform = 'translateX(0)'; }}
+                        >
+                            ← Back to Full Fleet List
+                        </button>
+                    )}
 
                     {/* Hero card */}
                     <div style={{
@@ -532,24 +583,87 @@ export default function AircraftPage() {
                         borderRadius: '20px', overflow: 'hidden', marginBottom: '20px',
                     }}>
                         {/* Image */}
-                        {aircraft.image && (
+                        <div style={{
+                            width: '100%', height: '320px', position: 'relative',
+                            background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            overflow: 'hidden',
+                        }}>
+                            {heroImage ? (
+                                <>
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img
+                                        src={heroImage}
+                                        alt={aircraft.name}
+                                        style={{
+                                            maxWidth: '100%', maxHeight: '100%', width: 'auto', height: 'auto',
+                                            objectFit: 'contain', display: 'block', position: 'relative', zIndex: 1
+                                        }}
+                                        onError={() => {
+                                            const name = aircraft.name.toLowerCase();
+                                            let fallback = 'https://images.unsplash.com/photo-1540962351504-03099e0a754b?q=80&w=1200&auto=format&fit=crop';
+
+                                            if (name.includes('indigo')) {
+                                                fallback = 'https://upload.wikimedia.org/wikipedia/commons/thumb/f/f5/IndiGo_Airlines_Airbus_A320-232_VT-IFH.jpg/1200px-IndiGo_Airlines_Airbus_A320-232_VT-IFH.jpg';
+                                            } else if (name.includes('air india')) {
+                                                fallback = 'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e0/Air_India_Airbus_A320neo_VT-EXF_at_DEL.jpg/1200px-Air_India_Airbus_A320neo_VT-EXF_at_DEL.jpg';
+                                            } else if (name.includes('air france')) {
+                                                fallback = 'https://upload.wikimedia.org/wikipedia/commons/thumb/4/42/Air_France_Airbus_A320-214_F-GKXG_at_LHR.jpg/1200px-Air_France_Airbus_A320-214_F-GKXG_at_LHR.jpg';
+                                            } else if (name.includes('freebird')) {
+                                                fallback = 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/30/Freebird_Airlines_Airbus_A320-214_TC-FHK_at_LEJ.jpg/1200px-Freebird_Airlines_Airbus_A320-214_TC-FHK_at_LEJ.jpg';
+                                            } else if (name.includes('emirates')) {
+                                                fallback = 'https://upload.wikimedia.org/wikipedia/commons/thumb/d/d0/Emirates_Airbus_A380-861_A6-EER_at_LAX.jpg/1200px-Emirates_Airbus_A380-861_A6-EER_at_LAX.jpg';
+                                            } else if (name.includes('singapore')) {
+                                                fallback = 'https://upload.wikimedia.org/wikipedia/commons/thumb/b/b5/Singapore_Airlines_Airbus_A350-941_9V-SMG_at_LHR.jpg/1200px-Singapore_Airlines_Airbus_A350-941_9V-SMG_at_LHR.jpg';
+                                            } else if (name.includes('boeing')) {
+                                                fallback = 'https://images.unsplash.com/photo-1540962351504-03099e0a754b?q=80&w=1200&auto=format&fit=crop';
+                                            }
+
+                                            setHeroImage(fallback);
+                                        }}
+                                    />
+                                    {aircraft.registrationImage && heroImage === aircraft.registrationImage && (
+                                        <div style={{
+                                            position: 'absolute', top: '15px', right: '15px',
+                                            padding: '5px 12px', borderRadius: '8px', background: 'rgba(99,102,241,0.85)',
+                                            color: 'white', fontSize: '0.72rem', fontWeight: 700, backdropFilter: 'blur(4px)',
+                                            boxShadow: '0 4px 6px rgba(0,0,0,0.2)', zIndex: 2
+                                        }}>
+                                            📸 SPECIFIC AIRFRAME IMAGE
+                                        </div>
+                                    )}
+                                </>
+                            ) : (
+                                <>
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img
+                                        src={(() => {
+                                            const name = aircraft.name.toLowerCase();
+                                            if (name.includes('indigo')) return 'https://upload.wikimedia.org/wikipedia/commons/thumb/f/f5/IndiGo_Airlines_Airbus_A320-232_VT-IFH.jpg/1200px-IndiGo_Airlines_Airbus_A320-232_VT-IFH.jpg';
+                                            if (name.includes('air india')) return 'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e0/Air_India_Airbus_A320neo_VT-EXF_at_DEL.jpg/1200px-Air_India_Airbus_A320neo_VT-EXF_at_DEL.jpg';
+                                            if (name.includes('air france')) return 'https://upload.wikimedia.org/wikipedia/commons/thumb/4/42/Air_France_Airbus_A320-214_F-GKXG_at_LHR.jpg/1200px-Air_France_Airbus_A320-214_F-GKXG_at_LHR.jpg';
+                                            if (name.includes('freebird')) return 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/30/Freebird_Airlines_Airbus_A320-214_TC-FHK_at_LEJ.jpg/1200px-Freebird_Airlines_Airbus_A320-214_TC-FHK_at_LEJ.jpg';
+                                            return "https://images.unsplash.com/photo-1436491865332-7a61a109c0f2?q=80&w=1200&auto=format&fit=crop";
+                                        })()}
+                                        alt="Aviation Background"
+                                        style={{
+                                            width: '100%', height: '100%',
+                                            objectFit: 'cover', opacity: 0.4,
+                                        }}
+                                    />
+                                    <div style={{
+                                        position: 'absolute', inset: 0, display: 'flex',
+                                        alignItems: 'center', justifyContent: 'center', fontSize: '4rem', zIndex: 2
+                                    }}>
+                                        ✈️
+                                    </div>
+                                </>
+                            )}
                             <div style={{
-                                width: '100%', height: '320px', position: 'relative',
-                                background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                overflow: 'hidden',
-                            }}>
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img src={aircraft.image} alt={aircraft.name} style={{
-                                    maxWidth: '100%', maxHeight: '100%', width: 'auto', height: 'auto',
-                                    objectFit: 'contain', display: 'block',
-                                }} onError={e => { const p = (e.target as HTMLImageElement).parentElement; if (p) p.style.display = 'none'; }} />
-                                <div style={{
-                                    position: 'absolute', bottom: 0, left: 0, right: 0, height: '80px',
-                                    background: 'linear-gradient(to bottom, transparent, var(--bg-card, rgba(15,15,20,1)))',
-                                    pointerEvents: 'none',
-                                }} />
-                            </div>
-                        )}
+                                position: 'absolute', bottom: 0, left: 0, right: 0, height: '80px',
+                                background: 'linear-gradient(to bottom, transparent, var(--bg-card, rgba(15,15,20,1)))',
+                                pointerEvents: 'none', zIndex: 3
+                            }} />
+                        </div>
 
                         {/* Name & description */}
                         <div style={{ padding: '20px 28px' }}>
@@ -762,11 +876,15 @@ export default function AircraftPage() {
 
                                     const filtered = useSheetsFleet
                                         ? (searchTerm
-                                            ? (categoryFiltered as FleetCsvRow[]).filter((p) => (p.REG || '').toLowerCase().includes(searchTerm))
+                                            ? (categoryFiltered as FleetCsvRow[]).filter((p) =>
+                                                Object.values(p).some(val => (val || '').toString().toLowerCase().includes(searchTerm))
+                                            )
                                             : (categoryFiltered as FleetCsvRow[]))
                                         : (searchTerm
-                                            ? (baseList as { registration?: string | null }[]).filter((p) => (p.registration || '').toLowerCase().includes(searchTerm))
-                                            : (baseList as { registration?: string | null }[]));
+                                            ? (baseList as any[]).filter((p) =>
+                                                Object.values(p).some(val => (val || '').toString().toLowerCase().includes(searchTerm))
+                                            )
+                                            : (baseList as any[]));
 
                                     const total = filtered.length;
                                     const sheetColumns = [
@@ -812,56 +930,92 @@ export default function AircraftPage() {
                                         <>
                                             <SectionTitle
                                                 icon="📋"
-                                                title={`Individual Aircraft (showing ${
-                                                    total === 0 ? 0 : Math.min(start + visible.length, total)
-                                                } of ${totalLabel}${searchTerm ? ' — filtered by registration' : ''}${useSheetsFleet ? ` — ${airlineSearchName} Fleet (Sheets)` : ''}`}
+                                                title={`Individual Aircraft (showing ${total === 0 ? 0 : Math.min(start + visible.length, total)
+                                                    } of ${totalLabel}${searchTerm ? ' — filtered' : ''}${useSheetsFleet ? ` — ${airlineSearchName} Fleet (Sheets)` : ''}`}
                                             />
                                             <div style={{ marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                                                {useSheetsFleet && (
-                                                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                                                        {[
-                                                            { id: 'all', label: 'All' },
-                                                            { id: 'current', label: 'Current' },
-                                                            { id: 'historic', label: 'Historic' },
-                                                            { id: 'special', label: 'Special' },
-                                                        ].map(opt => (
-                                                            <button
-                                                                key={opt.id}
-                                                                type="button"
-                                                                onClick={() => { setIndividualCategory(opt.id as any); setIndividualPage(1); }}
-                                                                style={{
-                                                                    padding: '4px 10px',
-                                                                    borderRadius: '999px',
-                                                                    border: individualCategory === opt.id ? '1px solid #6366f1' : '1px solid var(--border-subtle, rgba(255,255,255,0.18))',
-                                                                    background: individualCategory === opt.id ? 'rgba(99,102,241,0.18)' : 'var(--bg-card, rgba(15,23,42,0.7))',
-                                                                    color: 'inherit',
-                                                                    fontSize: '0.75rem',
-                                                                    fontWeight: 600,
-                                                                    cursor: 'pointer',
-                                                                }}
-                                                            >
-                                                                {opt.label}
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                                <input
-                                                    value={individualSearch}
-                                                    onChange={e => { setIndividualSearch(e.target.value); setIndividualPage(1); }}
-                                                    placeholder="Search by registration (e.g. VT-ALF)"
-                                                    style={{
-                                                        flex: '1 1 200px',
-                                                        minWidth: '0',
-                                                        maxWidth: '280px',
-                                                        padding: '8px 12px',
-                                                        borderRadius: '8px',
-                                                        border: '1px solid var(--border-subtle, rgba(255,255,255,0.12))',
-                                                        background: 'var(--bg-card, rgba(15,23,42,0.7))',
-                                                        color: 'inherit',
-                                                        fontSize: '0.85rem',
-                                                        outline: 'none',
+                                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                                    {searchTerm && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={resetRegistrationContext}
+                                                            style={{
+                                                                display: 'flex', alignItems: 'center', gap: '6px',
+                                                                padding: '6px 12px', borderRadius: '8px',
+                                                                background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.2)',
+                                                                color: '#818cf8', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer',
+                                                            }}
+                                                        >
+                                                            ← Back to Full List
+                                                        </button>
+                                                    )}
+                                                    {useSheetsFleet && (
+                                                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                                            {[
+                                                                { id: 'all', label: 'All' },
+                                                                { id: 'current', label: 'Current' },
+                                                                { id: 'historic', label: 'Historic' },
+                                                                { id: 'special', label: 'Special' },
+                                                            ].map(opt => (
+                                                                <button
+                                                                    key={opt.id}
+                                                                    type="button"
+                                                                    onClick={() => { setIndividualCategory(opt.id as any); setIndividualPage(1); }}
+                                                                    style={{
+                                                                        padding: '4px 10px',
+                                                                        borderRadius: '999px',
+                                                                        border: individualCategory === opt.id ? '1px solid #6366f1' : '1px solid var(--border-subtle, rgba(255,255,255,0.18))',
+                                                                        background: individualCategory === opt.id ? 'rgba(99,102,241,0.18)' : 'var(--bg-card, rgba(15,23,42,0.7))',
+                                                                        color: 'inherit',
+                                                                        fontSize: '0.75rem',
+                                                                        fontWeight: 600,
+                                                                        cursor: 'pointer',
+                                                                    }}
+                                                                >
+                                                                    {opt.label}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <form
+                                                    onSubmit={e => {
+                                                        e.preventDefault();
+                                                        search(individualSearch, true);
                                                     }}
-                                                />
+                                                    style={{ flex: '1 1 200px', maxWidth: '320px', display: 'flex', gap: '6px' }}
+                                                >
+                                                    <input
+                                                        value={individualSearch}
+                                                        onChange={e => { setIndividualSearch(e.target.value); setIndividualPage(1); }}
+                                                        placeholder="Search fleet (e.g. A319, VT-ALF, config)"
+                                                        style={{
+                                                            flex: 1,
+                                                            minWidth: '0',
+                                                            padding: '8px 12px',
+                                                            borderRadius: '8px',
+                                                            border: '1px solid var(--border-subtle, rgba(255,255,255,0.12))',
+                                                            background: 'var(--bg-card, rgba(15,23,42,0.7))',
+                                                            color: 'inherit',
+                                                            fontSize: '0.85rem',
+                                                            outline: 'none',
+                                                        }}
+                                                    />
+                                                    <button
+                                                        type="submit"
+                                                        style={{
+                                                            padding: '0 12px',
+                                                            borderRadius: '8px',
+                                                            background: 'rgba(99,102,241,0.2)',
+                                                            border: '1px solid rgba(99,102,241,0.3)',
+                                                            color: '#818cf8',
+                                                            cursor: 'pointer',
+                                                            fontSize: '0.8rem'
+                                                        }}
+                                                    >
+                                                        🔍
+                                                    </button>
+                                                </form>
                                             </div>
 
                                             <div style={{ overflowX: 'auto' }}>
@@ -915,7 +1069,7 @@ export default function AircraftPage() {
                                                                                     {reg ? (
                                                                                         <button
                                                                                             type="button"
-                                                                                            onClick={() => { setQuery(reg); search(reg); }}
+                                                                                            onClick={() => { setQuery(reg); search(reg, true); }}
                                                                                             style={{
                                                                                                 background: 'transparent',
                                                                                                 border: 'none',
@@ -957,7 +1111,7 @@ export default function AircraftPage() {
                                                                         {plane.registration ? (
                                                                             <button
                                                                                 type="button"
-                                                                                onClick={() => { setQuery(plane.registration || ''); search(plane.registration || ''); }}
+                                                                                onClick={() => { const r = plane.registration || ''; setQuery(r); search(r, true); }}
                                                                                 style={{
                                                                                     background: 'transparent',
                                                                                     border: 'none',
@@ -1039,6 +1193,22 @@ export default function AircraftPage() {
                                                 >
                                                     NEXT PAGE &gt;
                                                 </button>
+
+                                                {searchTerm && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={resetRegistrationContext}
+                                                        style={{
+                                                            marginLeft: '12px',
+                                                            display: 'flex', alignItems: 'center', gap: '6px',
+                                                            padding: '8px 14px', borderRadius: '10px',
+                                                            background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.2)',
+                                                            color: '#818cf8', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer',
+                                                        }}
+                                                    >
+                                                        ← Back to Full List
+                                                    </button>
+                                                )}
                                             </div>
                                         </>
                                     );

@@ -28,36 +28,51 @@ async function executeCronJob() {
     }
 }
 
-// POST /api/cron — Start or stop the cron scheduler
-export async function POST(request: NextRequest) {
-    const { searchParams } = new URL(request.url);
-    const action = searchParams.get('action') || 'run';
 
-    // Verify bearer token or API key in production
-    if (process.env.NODE_ENV === 'production') {
-        const auth = request.headers.get('authorization');
-        if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
+// GET /api/cron — Start the cron job or Get cron status
+export async function GET(request: NextRequest) {
+    const { searchParams } = new URL(request.url);
+    const action = searchParams.get('action');
+
+    // Simple health check if no action or if specifically requested
+    if (!action || action === 'status') {
+        const isRunning = await isIngestionRunning();
+        return NextResponse.json({
+            success: true,
+            scheduler: {
+                isRunning,
+                isProduction: process.env.NODE_ENV === 'production',
+                message: 'Use ?action=run to trigger the job'
+            },
+        });
+    }
+
+    // Trigger cron job with ?action=run
+    if (action === 'run') {
+        // Strict Authorization check as requested by USER
+        const authHeader = request.headers.get('Authorization');
+        if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+            console.warn('[Cron] Unauthorized access attempt');
             return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
         }
+
+        executeCronJob(); // Run in background
+        return NextResponse.json({ ok: true, message: 'Cron job initiated' });
     }
 
-    if (action === 'run') {
-        executeCronJob(); // No await so it doesn't time out the request
-        return NextResponse.json({ success: true, message: 'Manual run triggered' });
-    }
-
-    return NextResponse.json({ success: false, error: 'Invalid action. Use: run' }, { status: 400 });
+    return NextResponse.json({ ok: true });
 }
 
-// GET /api/cron — Get cron status
-export async function GET() {
-    const isRunning = await isIngestionRunning();
-    return NextResponse.json({
-        success: true,
-        scheduler: {
-            isRunning,
-            isProduction: process.env.NODE_ENV === 'production',
-            message: 'Use POST to trigger the job'
-        },
-    });
+// POST /api/cron — Handle manual triggers (Dashboard)
+export async function POST(request: NextRequest) {
+    const authHeader = request.headers.get('Authorization');
+
+    // Dashboard sends request directly, so we might need to skip secret in dev
+    // but in production we MUST check it.
+    if (process.env.NODE_ENV === 'production' && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+        return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
+    executeCronJob();
+    return NextResponse.json({ success: true, message: 'Manual run triggered' });
 }
